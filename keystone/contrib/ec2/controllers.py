@@ -179,11 +179,16 @@ class Ec2ControllerCommon(object):
         try:
             if 'params' in credentials:
                 timestamp = credentials['params']['Timestamp']
-                rcvd_time_gmt = time.strptime(timestamp,"%Y-%m-%dT%H:%M:%SZ")
+                timestamp_format = "%Y-%m-%dT%H:%M:%SZ"
             else:
                 timestamp = base64.urlsafe_b64decode(str(credentials['token'])).split("\n")[3]
+                timestamp_format = "%a, %d %b %Y %H:%M:%S GMT"
+            
+            try:
+                rcvd_time_gmt = time.strptime(timestamp,timestamp_format)
+            except ValueError:
                 try:
-                    rcvd_time_gmt = time.strptime(timestamp,"%a, %d %b %Y %H:%M:%S GMT")
+                    rcvd_time_gmt = time.gmtime(long(timestamp))
                 except ValueError:
                     raise exception.ValidationError(attribute="Correct Timestamp format", target="token")
 
