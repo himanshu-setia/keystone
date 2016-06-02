@@ -145,7 +145,7 @@ def run(possible_topdir):
                                      CONF.eventlet_server.admin_port,
                                      admin_worker_count))
         servers.append(create_server(paste_config,
-                                     'main',
+                                     'jcs-iam',
                                      CONF.eventlet_server.public_bind_host,
                                      CONF.eventlet_server.public_port,
                                      public_worker_count))
