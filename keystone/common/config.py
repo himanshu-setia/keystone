@@ -1184,7 +1184,10 @@ FILE_OPTIONS = {
             cfg.StrOpt('driver', default=('keystone.preauth.backends.sql.PreauthToken'),
                 help='preauth token backend.'),
     ],
-
+    'mfa': [
+            cfg.StrOpt('driver', default=('keystone.mfa.backends.sql.Mfa'),
+                help='mfa backend.'),
+    ]
 }
 
 
