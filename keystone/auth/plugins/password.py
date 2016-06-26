@@ -45,5 +45,7 @@ class Password(auth.AuthMethodHandler):
             # authentication failed because of invalid username or password
             msg = _('Invalid username or password')
             raise exception.Unauthorized(msg)
-
         auth_context['user_id'] = user_info.user_id
+        auth_context['mfa_enabled'] = user_info.user_ref['mfa_enabled']
+        auth_context['account_id'] = user_info.account_id
+

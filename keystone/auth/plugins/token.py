@@ -45,6 +45,9 @@ class Token(auth.AuthMethodHandler):
         if 'id' not in auth_payload:
             raise exception.ValidationError(attribute='id',
                                             target=self.method)
+        if len(auth_payload['id'])>32:
+            token_data = self.token_provider_api.validate_intermediate_token(auth_payload['id'])
+            return {'user_id':token_data['user_id'], 'otp': auth_payload['otp']}
         token_ref = self._get_token_ref(auth_payload)
         if token_ref.is_federated_user and self.federation_api:
             mapped.handle_scoped_token(

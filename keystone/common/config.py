@@ -896,6 +896,16 @@ FILE_OPTIONS = {
         cfg.IntOpt('Time', default=300,
                     help='Timestamp mismatch for authorization requests.'),
     ],
+    'IntermediateToken': [
+        cfg.IntOpt('key_active_duration', default=30,
+            help='Duration for which an iam key is active(days)'),
+        cfg.IntOpt('max_token_duration', default=36,
+            help='Maximum duration for which intermediate token is valid(hours)'),
+        cfg.IntOpt('max_active_keys', default=1,
+            help='Maximum number of active iam keys at a time'),
+        cfg.IntOpt('default_token_duration', default=15,
+            help='Default time (in minutes) for which intermediate token for mfa is valid'),
+    ], 
     'actions': [
          cfg.ListOpt('default_actions', default=['CreateUser',
         'GetUser',
@@ -1184,7 +1194,14 @@ FILE_OPTIONS = {
             cfg.StrOpt('driver', default=('keystone.preauth.backends.sql.PreauthToken'),
                 help='preauth token backend.'),
     ],
-
+    'mfa': [
+            cfg.StrOpt('driver', default=('keystone.mfa.backends.sql.Mfa'),
+                help='mfa backend.'),
+    ],
+    'common': [
+            cfg.StrOpt('driver', default=('keystone.common.backends.sql.Common'),
+                help='common backend'),
+    ],      
 }
 
 

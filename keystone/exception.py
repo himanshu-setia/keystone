@@ -160,6 +160,18 @@ class Unauthorized(SecurityError):
     title = 'Unauthorized'
 
 
+class MFAResyncExpected(SecurityError):
+    message_format = _("Wrong OTP code. The mfa device needs resync")
+    code = 411
+    title = 'Unauthorized'
+
+
+class IncorrectOTPError(SecurityError):
+    message_format = _("Wrong OTP code. Please try again")
+    code = 410
+    title = 'Unauthorized'
+
+
 class AuthPluginException(Unauthorized):
     message_format = _("Authentication plugin error.")
 

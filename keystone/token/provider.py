@@ -19,6 +19,8 @@ import base64
 import datetime
 import sys
 import uuid
+import json
+from dateutil import parser
 
 from keystoneclient.common import cms
 from oslo_config import cfg
@@ -26,6 +28,7 @@ from oslo_log import log
 from oslo_utils import timeutils
 import six
 
+from keystone.common import utils
 from keystone.common import cache
 from keystone.common import dependency
 from keystone.common import manager
@@ -371,6 +374,33 @@ class Manager(manager.Manager):
         if self._needs_persistence:
             self._create_token(token_id, data)
         return token_id, token_data
+
+    def create_intermediate_token(self, params):
+        if 'duration' not in params:
+            # populate duration in minutes
+            params['duration'] = CONF.IntermediateToken.default_token_duration
+        params['created_at'] = str(datetime.datetime.now())
+        canonical = json.dumps(params)
+        access, secret = self._persistence.get_iam_keypair()
+        token = utils.aes_encrypt(canonical, secret)
+        token = str(access) + '_' + token
+        return token
+
+
+    def validate_intermediate_token(self, token):
+        access = token.split('_')[0]
+        en_canonical = token.split('_')[1]
+        secret = self._persistence.get_secret_key(access)
+        canonical = utils.aes_decrypt(en_canonical, secret)
+        params = json.loads(canonical)
+        if not isinstance(params, dict) or 'duration' not in params or\
+          'created_at' not in params:
+            raise exception.Unauthorized('Invalid token')
+        params['created_at'] = parser.parse(params['created_at'])
+        expiry = params['created_at'] + datetime.timedelta(minutes=params['duration'])
+        if datetime.datetime.now() > expiry:
+            raise exception.Unauthorized('Invalid token')
+        return params
 
     def invalidate_individual_token_cache(self, token_id):
         # NOTE(morganfainberg): invalidate takes the exact same arguments as

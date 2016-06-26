@@ -183,7 +183,7 @@ class Resource(keystone_resource.Driver):
     def duplicate(self, account_id):
         with sql.transaction() as session:
             query = session.query(Account)
-            query.filter(Account.id == account_id)
+            query = query.filter(Account.id == account_id)
             account_refs = query.all()
             if account_refs == None or account_refs == []:
                 return True

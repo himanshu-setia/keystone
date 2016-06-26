@@ -14,6 +14,7 @@
 
 import copy
 import functools
+import uuid
 
 from oslo_config import cfg
 from oslo_log import log
@@ -24,7 +25,8 @@ from keystone import exception
 from keystone.i18n import _LI
 from keystone import token
 from keystone.token import provider
-
+from random import randint
+import datetime
 
 CONF = cfg.CONF
 LOG = log.getLogger(__name__)
@@ -46,6 +48,13 @@ class TokenModel(sql.ModelBase, sql.DictBase):
         sql.Index('ix_token_trust_id', 'trust_id')
     )
 
+class IamKeysModel(sql.ModelBase, sql.DictBase):
+    __tablename__ = 'iam_keys'
+    attributes = ['access_key', 'secret_key', 'expiry']
+    access_key = sql.Column(sql.String(64), primary_key=True)
+    secret_key = sql.Column(sql.String(64), nullable=False)
+    expiry = sql.Column(sql.DateTime, nullable=False, default=datetime.datetime.utcnow()\
+                 + datetime.timedelta(days=CONF.IntermediateToken.key_active_duration), index=True)
 
 def _expiry_range_batched(session, upper_bound_func, batch_size):
     """Returns the stop point of the next batch for expiration.
@@ -81,6 +90,15 @@ def _expiry_range_all(session, upper_bound_func):
     """Expires all tokens in one pass."""
 
     yield upper_bound_func()
+
+def duplicate_id(_id):
+    with sql.transaction() as session:
+        query = session.query(IamKeysModel)
+        query = query.filter(IamKeysModel.access_key == _id)
+        refs = query.all()
+        if refs == None or refs == []:
+            return False
+        return True
 
 
 class Token(token.persistence.Driver):
@@ -152,6 +170,34 @@ class Token(token.persistence.Driver):
                 token_list.append(token_ref.id)
 
         return token_list
+
+
+    def create_iam_keypair(self):
+        access = uuid.uuid4().hex[-4:]
+        secret = uuid.uuid4().hex
+        session = sql.get_session()
+        while duplicate_id(access):
+            access = uuid.uuid4().hex[-4:]
+        with session.begin():
+            session.add(IamKeysModel(access_key=access,secret_key=secret))
+        return access, secret
+
+
+    def get_secret_key(self, access_key):
+        session = sql.get_session()
+        secret_key = session.query(IamKeysModel).filter_by(access_key=access_key).first().\
+                         secret_key
+        return secret_key
+
+
+    def get_iam_keypair(self):
+        session = sql.get_session()
+        refs = session.query(IamKeysModel).filter(IamKeysModel.expiry>=datetime.datetime.now())
+        if refs.count()<CONF.IntermediateToken.max_active_keys:
+            return self.create_iam_keypair()
+        arbit = randint(0,CONF.IntermediateToken.max_active_keys-1) 
+        return refs[arbit].access_key, refs[arbit].secret_key        
+
 
     def _tenant_matches(self, tenant_id, token_ref_dict):
         return ((tenant_id is None) or

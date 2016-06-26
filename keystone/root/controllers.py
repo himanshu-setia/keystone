@@ -22,6 +22,7 @@ from keystone.i18n import _, _LW
 from keystone import notifications
 from keystone import identity
 from keystone import jio_policy
+from keystone import mfa
 from keystone import credential as cred
 from keystone import resource as res
 from keystone.common import dependency
@@ -77,17 +78,31 @@ class RootV3(controller.V3Controller):
                 context['environment']['KEYSTONE_AUTH_CONTEXT']['account_id'] = query_string['AccountId']
 
         account_id = context['environment']['KEYSTONE_AUTH_CONTEXT']['account_id']
+        
         #These are the actions which take Id(User) as input param)
         if Action == 'DeleteUser' or Action == 'UpdateUser' or Action == 'GetUser' or Action == 'GetUserSummary'\
-                or Action == 'ListGroupsForUser':
+        or Action == 'ListGroupsForUser':
             if 'Name' in query_string:
                 user_ref = self.identity_api.get_user_by_name(query_string['Name'], account_id)
                 query_string['Id'] = user_ref['id']
                 LOG.debug('UserId:%s UserName:%s', query_string['Id'], query_string['Name'])
-            if 'Id' in query_string:
+            elif 'Id' in query_string:
                 user_ref = self.identity_api.get_user(query_string['Id'])
                 query_string['Name'] = user_ref['name']
                 LOG.debug('UserId:%s UserName:%s', query_string['Id'], query_string['Name'])
+          
+        if Action == 'EnableMFADevice' or Action == 'DeactivateMFADevice' or Action == 'ResyncMFADevice':
+            if 'UserName' in query_string:
+                user_ref = self.identity_api.get_user_by_name(query_string['UserName'], account_id)
+                query_string['UserId'] = user_ref['id']
+                LOG.debug('UserId:%s UserName:%s', query_string['UserId'], query_string['UserName'])
+            elif 'UserId' in query_string:
+                user_ref = self.identity_api.get_user(query_string['UserId'])
+                query_string['UserName'] = user_ref['name']
+                LOG.debug('UserId:%s UserName:%s', query_string['UserId'], query_string['UserName'])
+            else:
+                query_string['UserName'] = context['environment']['KEYSTONE_AUTH_CONTEXT']['UserInfo']['UserName']
+                query_string['UserId'] = context['environment']['KEYSTONE_AUTH_CONTEXT']['UserInfo']['UserId']
 
         #These are the actions which take UserId as input param)
         if Action == 'CreateCredential' or Action == 'GetUserCredential' \
@@ -273,6 +288,7 @@ class RootV3(controller.V3Controller):
                 return credential_controller.get_user_credentials(context, credential)
 
             jio_policy_controller = jio_policy.controllers.JioPolicyV3()
+            mfa_controller = mfa.controllers.MfaV3()
 
             if Action == 'ListActions':
                 return jio_policy_controller.list_actions(context)
@@ -408,6 +424,50 @@ class RootV3(controller.V3Controller):
                 jio_policy_id = query_string['PolicyId']
                 resource = json.loads(query_string['Resource'])
                 return jio_policy_controller.detach_policy_from_resource(context, jio_policy_id, resource['resource'])
+            elif Action == 'CreateVirtualMFADevice':
+                device = {}
+                device['name'] = query_string['VirtualMFADeviceName']
+                device['account_id'] = account_id
+                return mfa_controller.create_virtual_mfa_device(context, device)
+            elif Action == 'EnableMFADevice':
+                user = {}; mfa_device = {}
+                user['name'] = query_string['UserName']
+                user['id'] = query_string['UserId']
+                mfa_device['account_id'] = account_id
+                mfa_device['name'] = query_string['MfaName']
+                code1 = query_string['AuthenticationCode1']
+                code2 = query_string['AuthenticationCode2']
+                return mfa_controller.enable_mfa_device(context, user, mfa_device, code1, code2)
+            elif Action == 'DeactivateMFADevice':
+                user = {}; mfa_device = {}
+                user['name'] = query_string['UserName']
+                user['id'] = query_string['UserId']
+                mfa_device['account_id'] = account_id
+                mfa_device['name'] = query_string['MfaName']
+                return mfa_controller.deactivate_mfa_device(context, user, mfa_device)
+            elif Action == 'DeleteVirtualMFADevice':
+                mfa_device = {}
+                mfa_device['name'] = query_string['MfaName']
+                mfa_device['account_id'] = account_id
+                return mfa_controller.delete_virtual_mfa_device(context, mfa_device)
+            elif Action == 'ListVirtualMFADevices':
+                assign_status = query_string['AssignmentStatus']
+                return mfa_controller.list_virtual_mfa_devices(context, assign_status, account_id)
+            elif Action == 'ResyncMFADevice':
+                user = {}; mfa_device = {}
+                user['name'] = query_string['UserName']
+                user['id'] = query_string['UserId']
+                mfa_device['account_id'] = account_id
+                mfa_device['name'] = query_string['MfaName']
+                code1 = query_string['AuthenticationCode1']
+                code2 = query_string['AuthenticationCode2']
+                return mfa_controller.enable_mfa_device(context, user, mfa_device, code1, code2, True)
+            elif Action == 'GetSessionToken':
+                duration_in_sec = query_string['DurationSeconds']
+                mfa_device['account_id'] = account_id
+                mfa_device['name'] = query_string['MfaName']
+                code = query_string['TokenCode']
+                return mfa_controller.get_session_token(context, mfa_device, duration_in_sec, code)
         except KeyError, e:
             raise exception.QueryParameterNotFound(parameter=e)
 

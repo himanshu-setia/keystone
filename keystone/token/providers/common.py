@@ -322,7 +322,8 @@ class V3TokenDataHelper(object):
             'id': user_ref['id'],
             'name': user_ref['name'],
             'account': self._get_filtered_account(user_ref['account_id']),
-            'type': user_ref['type']}
+            'type': user_ref['type'],
+            'mfa_enabled': user_ref['mfa_enabled']}
         token_data['user'] = filtered_user
 
     def _populate_oauth_section(self, token_data, access_token):

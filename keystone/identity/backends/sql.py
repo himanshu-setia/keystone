@@ -19,6 +19,7 @@ from keystone.common import utils
 from keystone import exception
 from keystone.i18n import _
 from keystone import identity
+from keystone import mfa
 import datetime;
 
 CONF = cfg.CONF
@@ -27,7 +28,7 @@ CONF = cfg.CONF
 class User(sql.ModelBase, sql.DictBase):
     __tablename__ = 'user'
     attributes = ['id', 'name', 'account_id', 'password', 'enabled',
-                  'default_project_id', 'type']
+                  'default_project_id', 'type', 'mfa_enabled']
     id = sql.Column(sql.String(64), primary_key=True)
     name = sql.Column(sql.String(255), nullable=False)
     account_id = sql.Column(sql.String(64), nullable=False)
@@ -36,6 +37,7 @@ class User(sql.ModelBase, sql.DictBase):
     extra = sql.Column(sql.JsonBlob())
     default_project_id = sql.Column(sql.String(64))
     type = sql.Column(sql.Enum('regular', 'root'), nullable=False)
+    mfa_enabled = sql.Column(sql.Boolean)
     # Unique constraint across two columns to create the separation
     # rather than just only 'name' being unique
     __table_args__ = (sql.UniqueConstraint('account_id', 'name'), {})
@@ -457,6 +459,10 @@ class Identity(identity.Driver):
             q = session.query(UserHistory)
             q = q.filter_by(userid=user_id)
             q.delete(False)
+ 
+            q = session.query(MfaDeviceModel)
+            q = q.filter_by(user_id=user_id)
+            q.update({'user_id': None, 'enabled': False})
             session.delete(ref)
 
     # group crud

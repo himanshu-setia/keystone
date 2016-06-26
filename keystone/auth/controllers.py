@@ -128,7 +128,7 @@ class AuthContext(dict):
 # available for consumers. Consumers should probably not be getting
 # identity_api from this since it's available in global registry, then
 # identity_api should be removed from this list.
-@dependency.requires('identity_api', 'resource_api', 'trust_api')
+@dependency.requires('identity_api', 'mfa_api', 'resource_api', 'trust_api')
 class AuthInfo(object):
     """Encapsulation of "auth" request."""
 
@@ -349,7 +349,7 @@ class AuthInfo(object):
 
 @dependency.requires('assignment_api', 'catalog_api', 'identity_api',
                      'resource_api', 'token_provider_api', 'trust_api',
-                     'jio_policy_api', 'credential_api')
+                     'jio_policy_api', 'credential_api', 'mfa_api')
 class Auth(controller.V3Controller):
 
     # Note(atiwari): From V3 auth controller code we are
@@ -391,11 +391,27 @@ class Auth(controller.V3Controller):
             auth_context = AuthContext(extras={},
                                        method_names=[],
                                        bind={})
-            self.authenticate(context, auth_info, auth_context)
+            auth_resp = self.authenticate(context, auth_info, auth_context)
+            if isinstance(auth_resp, dict):
+                return render_token_data_response(auth_resp['token_id'],
+                                                  auth_resp['response'],
+                                                  created=True)
             if auth_context.get('access_token_id'):
                 auth_info.set_scope(None, auth_context['project_id'], None)
             self._check_and_set_default_scoping(auth_info, auth_context)
             (account_id, project_id, trust, unscoped) = auth_info.get_scope()
+            if 'mfa_enabled' in auth_context:
+                if auth_context['mfa_enabled']:
+                    mfa_resync_needed = self.mfa_api.get_resync_info(auth_context['user_id']) 
+                    if mfa_resync_needed:
+                        params = {'user_id': auth_context['user_id'], 'duration': 15, 'vmfa_resync_needed': True}
+                        response = {'user_id': auth_context['user_id'], 'account_id': auth_context['account_id'], 'vmfa_resync_needed': True}
+                    else:
+                        params = {'user_id': auth_context['user_id'], 'duration': 15, 'vmfa_code_needed': True}
+                        response = {'user_id': auth_context['user_id'], 'account_id': auth_context['account_id'], 'vmfa_code_needed': True}
+                    token_id = self.token_provider_api.create_intermediate_token(params)
+                    return render_intermediate_token_response(token_id, response,
+                                                      created=True)
 
             method_names = auth_info.get_method_names()
             if 'token' in method_names:
@@ -493,7 +509,6 @@ class Auth(controller.V3Controller):
 
     def authenticate(self, context, auth_info, auth_context):
         """Authenticate user."""
-
         # The 'external' method allows any 'REMOTE_USER' based authentication
         # In some cases the server can set REMOTE_USER as '' instead of
         # dropping it, so this must be filtered out
@@ -523,8 +538,20 @@ class Auth(controller.V3Controller):
                                        auth_info.get_method_data(method_name),
                                        auth_context)
             if resp:
-                auth_response['methods'].append(method_name)
-                auth_response[method_name] = resp
+                if 'otp' in resp:
+                    self.mfa_api.validate_otp(resp['user_id'], resp['otp'])
+                    resp['extras'] = {'mfa_token': True}
+                    (token_id, token_data) = self.token_provider_api.issue_v3_token(
+                      resp['user_id'],['password'], None, None, None,
+                      resp, None, None, False, None)
+                    if 'token' in token_data and 'user' in token_data['token']:
+                        user = token_data['token']['user']
+                        context['UserInfo'] = {'UserName': user['name'], 'UserType': user['type'], 'UserId': user['id'], 'AccountId': user['account']['id']}
+                    resp = self.format_auth_response(token_data, True)
+                    return {'token_id':token_id, 'response': resp}
+                else:
+                    auth_response['methods'].append(method_name)
+                    auth_response[method_name] = resp
 
         if auth_response["methods"]:
             # authentication continuation required
@@ -534,6 +561,7 @@ class Auth(controller.V3Controller):
             msg = _('User not found')
             raise exception.Unauthorized(msg)
 
+ 
     def check_token(self, context):
         token_id = context.get('token_id')
         token_data = self.token_provider_api.validate_v3_token(
@@ -840,6 +868,7 @@ class Auth(controller.V3Controller):
         else:
             return a or b
 
+
     @controller.protected()
     def get_auth_projects(self, context):
         auth_context = self.get_auth_context(context)
@@ -924,3 +953,22 @@ def render_token_data_response(token_id, token_data, created=False):
 
     return wsgi.render_response(body=token_data,
                                 status=status, headers=headers)
+
+def render_intermediate_token_response(token_id, token_data, created=False):
+    """Render token data HTTP response.
+
+    Stash token ID into the X-Subject-Token header.
+
+    """
+    headers = []
+    if token_id != None:
+        headers = [('X-Subject-Token', token_id)]
+
+    if created:
+        status = (210, 'Created')
+    else:
+        status = (200, 'OK')
+
+    return wsgi.render_response(body=token_data,
+                                status=status, headers=headers)
+

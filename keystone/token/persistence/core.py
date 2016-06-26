@@ -107,6 +107,15 @@ class PersistenceManager(manager.Manager):
             self._invalidate_individual_token_cache(unique_id)
         self.invalidate_revocation_list()
 
+    def create_iam_keypair(self):
+        return self.driver.create_iam_keypair()
+
+    def get_secret_key(self, access_key):
+        return self.driver.get_secret_key(access_key)
+
+    def get_iam_keypair(self):
+        return self.driver.get_iam_keypair()
+
     @REVOCATION_MEMOIZE
     def list_revoked_tokens(self):
         return self.driver.list_revoked_tokens()
@@ -322,6 +331,18 @@ class Driver(object):
             except exception.NotFound:
                 pass
         return token_list
+
+    @abc.abstractmethod
+    def create_iam_keypair(self):
+        raise exception.NotImplemented()  # pragma: no cover
+
+    @abc.abstractmethod
+    def get_secret_key(self, access_key):
+        raise exception.NotImplemented()  # pragma: no cover
+
+    @abc.abstractmethod
+    def get_iam_keypair(self):
+        raise exception.NotImplemented()  # pragma: no cover
 
     @abc.abstractmethod
     def _list_tokens(self, user_id, tenant_id=None, trust_id=None,
